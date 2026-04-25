@@ -13,10 +13,66 @@
 #include "driver/gpio.h"
 #include "esp_http_server.h"
 #include "esp_wifi.h"
-#include "webpage.h"
 #include "nvs.h"
 #include "mqtt_client.h"
 #include "freertos/event_groups.h"
+
+const char* html_template = 
+"<!DOCTYPE html><html>"
+"<head>"
+"  <meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+"  <title>HA Vacuum Control</title>"
+"  <style>"
+"    body { font-family: sans-serif; background-color: #f4f4f9; padding: 20px; color: #333; }"
+"    .container { max-width: 400px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }"
+"    h2 { text-align: center; color: #007bff; margin-bottom: 20px; }"
+"    h3 { font-size: 1.1em; margin-top: 25px; border-top: 1px solid #eee; padding-top: 15px; }"
+"    label { font-weight: bold; display: block; margin-bottom: 5px; font-size: 0.9em; }"
+"    input, select { width: 100%%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 16px; }"
+"    .btn { width: 100%%; padding: 12px; border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer; font-size: 16px; margin-bottom: 10px; }"
+"    .test-grid { display: flex; gap: 10px; margin-bottom: 10px; }"
+"    .test-grid button { flex: 1; border: none; border-radius: 6px; color: white; padding: 12px; font-weight: bold; cursor: pointer; }"
+"    .note { font-size: 0.8em; color: #666; text-align: center; margin-top: 15px; }"
+"  </style>"
+"</head>"
+"<body>"
+"  <div class='container'>"
+"    <h2>System Setup</h2>"
+"    <div style='margin-bottom: 15px; font-size: 0.85em; color: #555;'>"
+"      <strong>Current Network:</strong> <span style='color: #4CAF50;'>%s</span>"
+"    </div>"
+"    <form id='configForm' action='/save' method='POST'>"
+"      <label>Wi-Fi Network</label>"
+"      %s"
+"      <label>Wi-Fi Password</label>"
+"      <input type='password' name='wifi_pass'>"
+"      <label>MQTT Broker (IP:Port)</label>"
+"      <input type='text' name='ip' value='%s'>"
+"      <label>MQTT User</label>"
+"      <input type='text' name='user' value='%s'>"
+"      <label>MQTT Pass</label>"
+"      <input type='password' name='pass' value='%s'>"
+"      <input type='submit' class='btn' style='background:#007bff;' value='Save & Reboot'>"
+"      <button type='button' class='btn' onclick=\"saveMQTT()\" style='background:#4CAF50;'>Update MQTT Only</button>"
+"    </form>"
+"    <h3>Manual Hardware Test</h3>"
+"    <div class='test-grid'>"
+"      <button onclick=\"fetch('/trigger?pin=0')\" style='background:#2196F3;'>Dock</button>"
+"      <button onclick=\"fetch('/trigger?pin=1')\" style='background:#f44336;'>Clean</button>"
+"      <button onclick=\"fetch('/trigger?pin=3')\" style='background:#FF9800;'>Max</button>"
+"    </div>"
+"    <div class='note'>Device reboots only on 'Save & Reboot'</div>"
+"  </div>"
+"</body>"
+"<script>"
+"function saveMQTT() {"
+"    const form = document.getElementById('configForm');"
+"    const formData = new URLSearchParams(new FormData(form));"
+"    fetch('/save_mqtt', { method: 'POST', body: formData })"
+"        .then(response => alert('MQTT Settings Saved (No Reboot)'));"
+"}"
+"</script>"
+"</html>";
 
 static const char *TAG = "HA-Vac-Control";
 
@@ -74,8 +130,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
             // Centralized Execution Logic
             if (target_pin != GPIO_NUM_NC) {
+                int level = gpio_get_level(target_pin);
+                ESP_LOGI(TAG, "Before Trigger: Pin %d is %d", target_pin, level);  
                 ESP_LOGI(TAG, "Triggering Pin %d", target_pin);
                 
+                // 1. Force the pin HIGH (1) first to clear any "stuck" state
+                gpio_set_level(target_pin, 1);
+                vTaskDelay(pdMS_TO_TICKS(50));
+
                 // Structurally, offloading the pulse to a task is better
                 // But if you keep it here, at least it's only in one place!
                 gpio_set_level(target_pin, 0); 
@@ -93,6 +155,23 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             ESP_LOGD(TAG, "Other event id:%d", event_id);
             break;
     }
+}
+
+esp_err_t trigger_get_handler(httpd_req_t *req) {
+    char buf[32];
+    if (httpd_req_get_url_query_str(req, buf, sizeof(buf)) == ESP_OK) {
+        char pin_val[10];
+        if (httpd_query_key_value(buf, "pin", pin_val, sizeof(pin_val)) == ESP_OK) {
+            int pin = atoi(pin_val);
+            ESP_LOGI(TAG, "Web Trigger: GPIO %d", pin);
+            
+            gpio_set_level(pin, 0); // Pull to Ground
+            vTaskDelay(pdMS_TO_TICKS(500));
+            gpio_set_level(pin, 1); // Release
+        }
+    }
+    httpd_resp_sendstr(req, "Triggered");
+    return ESP_OK;
 }
 // --- NVS LOGIC ---
 
@@ -131,6 +210,36 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 }
 
+void url_decode(char *src) {
+    char *dst = src;
+    while (*src) {
+        if (*src == '%' && src[1] && src[2]) {
+            int val; sscanf(src + 1, "%2x", &val);
+            *dst++ = (char)val; src += 3;
+        } else if (*src == '+') { *dst++ = ' '; src++; }
+        else { *dst++ = *src++; }
+    }
+    *dst = '\0';
+}
+
+esp_err_t mqtt_only_save_handler(httpd_req_t *req) {
+    char buf[256] = {0};
+    httpd_req_recv(req, buf, sizeof(buf) - 1);
+
+    char ip[64]={0}, user[32]={0}, pass[32]={0}, ssid[32]={0}, wifi_pass[64]={0};
+    httpd_query_key_value(buf, "ip", ip, 64);
+    httpd_query_key_value(buf, "user", user, 32);
+    httpd_query_key_value(buf, "pass", pass, 32);
+    // ... decode and save as usual ...
+    url_decode(ip); url_decode(user); url_decode(pass);
+    
+    save_settings(ip, user, pass, ssid, wifi_pass);
+    
+    ESP_LOGI(TAG, "MQTT Settings saved via Web (No reboot)");
+    httpd_resp_sendstr(req, "MQTT Settings Saved!");
+    return ESP_OK;
+}
+
 void get_wifi_list_html(char *list_buf, size_t max_len) {
     uint16_t number = MAX_APs;
     wifi_ap_record_t ap_info[MAX_APs];
@@ -148,25 +257,29 @@ void get_wifi_list_html(char *list_buf, size_t max_len) {
     strcat(list_buf, "</select>");
 }
 
-void url_decode(char *src) {
-    char *dst = src;
-    while (*src) {
-        if (*src == '%' && src[1] && src[2]) {
-            int val; sscanf(src + 1, "%2x", &val);
-            *dst++ = (char)val; src += 3;
-        } else if (*src == '+') { *dst++ = ' '; src++; }
-        else { *dst++ = *src++; }
-    }
-    *dst = '\0';
-}
-
 esp_err_t settings_get_handler(httpd_req_t *req) {
     char ip[32], user[32], pass[32], w_ap[32], w_pw[32];
     load_settings(ip, user, pass, w_ap, w_pw);
+
+    // Get current connected SSID from the Wi-Fi driver
+    wifi_config_t current_conf;
+    char current_ssid[33] = "Not Connected";
+    if (esp_wifi_get_config(WIFI_IF_STA, &current_conf) == ESP_OK) {
+        if (strlen((char*)current_conf.sta.ssid) > 0) {
+            strncpy(current_ssid, (char*)current_conf.sta.ssid, 32);
+        }
+    }
+
     char wifi_list[1024] = {0};
     get_wifi_list_html(wifi_list, sizeof(wifi_list));
-    char *out_buf = malloc(3072);
-    snprintf(out_buf, 3072, html_template, wifi_list, ip, user, pass);
+
+    // Increase buffer size slightly to accommodate the extra string
+    char *out_buf = malloc(4096);
+    if (out_buf == NULL) return ESP_FAIL;
+
+    // Pass current_ssid as the first dynamic argument
+    snprintf(out_buf, 4096, html_template, current_ssid, wifi_list, ip, user, pass);
+    
     httpd_resp_send(req, out_buf, HTTPD_RESP_USE_STRLEN);
     free(out_buf);
     return ESP_OK;
@@ -189,6 +302,18 @@ esp_err_t settings_post_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
+httpd_uri_t uri_mqtt_save = {
+    .uri = "/save_mqtt",
+    .method = HTTP_POST,
+    .handler = mqtt_only_save_handler
+};
+
+httpd_uri_t uri_trigger = {
+    .uri      = "/trigger",
+    .method   = HTTP_GET,
+    .handler  = trigger_get_handler,
+    .user_ctx = NULL
+};
 // --- APP STARTUP ---
 
 void mqtt_app_start(void) {
@@ -204,7 +329,6 @@ void mqtt_app_start(void) {
     esp_mqtt_client_start(client);
 }
 
-// Move this above app_main or put in a header
 void start_settings_server(void) {
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
@@ -219,12 +343,15 @@ void start_settings_server(void) {
     if (httpd_start(&server, &config) == ESP_OK) {
         httpd_register_uri_handler(server, &uri_get);
         httpd_register_uri_handler(server, &uri_post);
+        httpd_register_uri_handler(server, &uri_trigger);
+        httpd_register_uri_handler(server, &uri_mqtt_save);
         ESP_LOGI(TAG, "Web Server started on STA/AP interface.");
     }
 }
 
 void app_main(void) {
     nvs_flash_init();
+    configure_gpio_pins();
     esp_netif_init();
     esp_event_loop_create_default();
     s_wifi_event_group = xEventGroupCreate();
@@ -254,7 +381,6 @@ void app_main(void) {
         xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(15000));
         
         // 2. Start Services
-        configure_gpio_pins();
         start_settings_server(); // <-- Now starts in STA mode
         mqtt_app_start();
 
