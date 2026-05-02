@@ -1,10 +1,17 @@
-Congratulations on reaching this milestone! Since you’ve now got a stable "Gold Master" baseline with GPIO triggers, MQTT integration, and a responsive web portal, your README should reflect the technical depth of the project.
+I found a Shark Robot vacuum at a garage sale about 6 years ago. The vacuum fan was broken, so the owner gave it to me. $20 later and the unit was running again. I get the app to get it setup, and then eventually added it to home assistant when I started getting into home automation. all was great for 4 years.
 
-Here is a professionally structured, "rich" README.md template designed specifically for your HA-Vac-Control project. You can copy this directly into your VS Code editor.
-HA-Vac-Control (ESP32-C3)
+I recently read somewhere that Shark was pulling their open API or something. I did not follow it much, but I then started getting emails saying to "Log In" to get it working again. I am now getting this every month or so. 
+
+At this point I decided to take matters into my own hands and come up with something Cheap, Simple, and accessible for most people. For the vacuum itself, I only really needed to press a few buttons on the top. Seemed like a simple task for a small ESP module. Everyone else is using them, myself included, but I have never started my own project (I got close sometimes). I wanted this to be simple MQTT activated trigger for the three buttons. I originally wanted zigbee, but I ordered the wrong module. I am not a huge fan if wifi devices, but since I had the module and everyone has wifi, I decided to just deal with it. 
+
+The plan was for three GPIOs set to Open-Drain mode, to ground the three 3.3V signals that are routed to the three micro switch buttons. This wa it was a single wire for each button + Power and ground. I was going to add a sensor for detecting if the unit was actually running but ran out of steam. 
+
+This is my first dive into embedded programming since my days working on a PXA250 with the C# compact Framework. Wow things have changed. Most of the development was done with the help of Google Gemini. It is interesting, as it made it easier in the in the same way an electric drill makes drilling holes easier. You still need to know where to drill.
+
+-------------START AI Documentation -------------
 
 An advanced, MQTT-integrated hardware bridge for robot vacuums. This project allows you to modernize "offline" vacuums by interfacing directly with their button logic using an ESP32-C3 SuperMini, enabling full control via Home Assistant.
-🚀 Overview
+Overview
 
 The software acts as a "Smart Remote," mimicking physical button presses through Open-Drain GPIO triggers. It features a dual-mode networking stack: an Access Point (AP) for initial configuration and a Station (STA) mode for daily operation.
 Key Features
@@ -19,7 +26,7 @@ Key Features
 
     On-the-Fly Updates: Ability to update MQTT broker settings via the web UI without requiring a full system reboot.
 
-🛠 Hardware Architecture
+Hardware Architecture
 
 The software is optimized for the ESP32-C3 SuperMini.
 GPIO Mapping
@@ -27,7 +34,7 @@ Command	GPIO	Logic Type	Function
 DOCK	0	Open-Drain	Pulls "Home" button line to Ground
 CLEAN	1	Open-Drain	Pulls "Start/Stop" line to Ground
 MAX	3	Open-Drain	Pulls "Turbo" line to Ground
-💾 Installation & Flashing
+Installation & Flashing
 Prerequisites
 
     ESP-IDF v5.x (Developed and tested on Linux Mint/Ubuntu).
@@ -64,14 +71,14 @@ esptool.py -p /dev/ttyACM0 -b 460800 --chip esp32c3 write_flash \
 
     The device will reboot and join your network.
 
-📡 MQTT API
+MQTT API
 
 The device listens on the vacuum/commands topic. Send the following raw strings as payloads:
 Payload	Action
 DOCK	Triggers GPIO 0 (500ms pulse)
 CLEAN	Triggers GPIO 1 (500ms pulse)
 MAX	Triggers GPIO 3 (500ms pulse)
-📝 Troubleshooting (Linux)
+Troubleshooting (Linux)
 
 If you encounter a "Port Busy" or "OpenOCD" error while debugging on Linux:
 
