@@ -61,6 +61,8 @@ esptool.py -p /dev/ttyACM0 -b 460800 --chip esp32c3 write_flash \
   0x8000 partition-table.bin \
   0x10000 HA-Vac-Control.bin
 
+  Note: The provided binaries are compiled for the ESP32-C3 architecture. Using these on a standard ESP32 or ESP32-S3 will not work and may require a different partition table.
+
 3. Initial Configuration
 
     Power the module. If no Wi-Fi is configured, it will broadcast an AP named ESP32_Vac_Setup.
@@ -87,3 +89,27 @@ If you encounter a "Port Busy" or "OpenOCD" error while debugging on Linux:
     Clear stale debugger ports: sudo fuser -k 6666/tcp.
 
     Ensure your user is in the dialout group: sudo usermod -a -G dialout $USER.
+
+
+
+For the Homeassistant MQTT settings, you can add a button with MQTT publish on tap.  See below:
+
+    - entity: button
+        icon: mdi:robot-vacuum
+        name: Vac Clean
+        type: custom:button-card
+        tap_action:
+          action: perform-action
+          perform_action: mqtt.publish
+          data:
+            topic: vacuum/commands
+            payload: CLEAN
+            qos: 1
+            retain: false
+        color: blue
+
+
+
+## ⚖️ License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
