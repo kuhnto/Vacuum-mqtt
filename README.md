@@ -8,6 +8,9 @@ The plan was for three GPIOs set to Open-Drain mode, to ground the three 3.3V si
 
 This is my first dive into embedded programming since my days working on a PXA250 with the C# compact Framework. Wow things have changed. Most of the development was done with the help of Google Gemini. It is interesting, as it made it easier in the in the same way an electric drill makes drilling holes easier. You still need to know where to drill.
 
+<img width="880" height="820" alt="Vacuum-mqtt drawio" src="https://github.com/user-attachments/assets/8e202e43-c06a-4a2f-aed6-da841b5b17a2" />
+
+
 -------------START AI Documentation -------------
 
 An advanced, MQTT-integrated hardware bridge for robot vacuums. This project allows you to modernize "offline" vacuums by interfacing directly with their button logic using an ESP32-C3 SuperMini, enabling full control via Home Assistant.
@@ -113,3 +116,5 @@ For the Homeassistant MQTT settings, you can add a button with MQTT publish on t
 ## ⚖️ License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+
