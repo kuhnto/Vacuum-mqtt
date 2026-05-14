@@ -10,6 +10,7 @@ This is my first dive into embedded programming since my days working on a PXA25
 
 <img width="880" height="820" alt="Vacuum-mqtt drawio" src="https://github.com/user-attachments/assets/8e202e43-c06a-4a2f-aed6-da841b5b17a2" />
 
+<img width="1440" height="1920" alt="image" src="https://github.com/user-attachments/assets/3387967e-969f-4870-99ed-b398609682b0" />
 
 -------------START AI Documentation -------------
 
